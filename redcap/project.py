@@ -21,10 +21,31 @@ try:
 except ImportError:
     read_csv = None
 
-
 class Project(object):
     """Main class for interacting with REDCap projects"""
 
+    # Create a new project using 64-character supertoken
+    @classmethod
+    def create_project(cls, url, token, project_title, purpose, purpose_other=None,project_notes=None,is_longitudinal=None,surveys_enabled=None,record_autonumbering_enabled=None,**constructor_kwargs):
+        pl = {'token':token,
+                'content':'project',
+                'format':'json',
+                'type':'flat',
+                'project_title':project_title,
+                'purpose':purpose,
+                'purpose_other':purpose_other,
+                'project_notes':project_notes,
+                'is_longitudinal':is_longitudinal,
+                'surveys_enabled':surveys_enabled,
+                'record_autonumbering_enabled':record_autonumbering_enabled}
+
+        rcr = RCRequest(url, pl, 'create_project')
+        response = rcr.execute()
+        if "error" in response[0]:
+            print(response)
+        else: 
+            return cls(url, response, **constructor_kwargs)
+        
     def __init__(self, url, token, name='', verify_ssl=True, lazy=False):
         """
         Parameters
@@ -39,12 +60,15 @@ class Project(object):
             Verify SSL, default True. Can pass path to CA_BUNDLE.
         """
 
+        # API-specific variables
         self.token = token
         self.name = name
         self.url = url
         self.verify = verify_ssl
-        self.metadata = None
         self.redcap_version = None
+        
+        # Project variables
+        self.metadata = None
         self.field_names = None
         # We'll use the first field as the default id for each row
         self.def_field = None
@@ -54,6 +78,7 @@ class Project(object):
         self.arm_nums = None
         self.arm_names = None
         self.configured = False
+        self.is_longitudinal = None
         # Add more detailed project info
         #   Stored in dictionary to safe space and clarity
         self.project_info = None
@@ -63,27 +88,30 @@ class Project(object):
 
     def configure(self):
         try:
-            self.metadata = self.__md()
+            self.metadata = self.export_metadata()
         except RequestException:
             raise RedcapError("Exporting metadata failed. Check your URL and token.")
         try:
-            self.redcap_version = self.__rcv()
+            self.redcap_version = self.rcv()
         except:
             raise RedcapError("Determination of REDCap version failed")
         try:
-            self.project_info = self.export_project()
+            self.project_info = self.export_data('project')
+            self.is_longitudinal = self.project_info['is_longitudinal']
         except RequestException:
             raise RedcapError("Exporting project information failed")
-
+        
         self.field_names = self.filter_metadata('field_name')
         # we'll use the first field as the default id for each row
         self.def_field = self.field_names[0]
         self.field_labels = self.filter_metadata('field_label')
         self.forms = tuple(set(c['form_name'] for c in self.metadata))
         # determine whether longitudinal
-        ev_data = self._call_api(self.__basepl('event'), 'exp_event')[0]
-        arm_data = self._call_api(self.__basepl('arm'), 'exp_arm')[0]
-
+        #ev_data = self._call_api(self.__basepl('event'), 'exp_event')[0]
+        ev_data = self.export_data('event')
+        #arm_data = self._call_api(self.__basepl('arm'), 'exp_arm')[0]
+        arm_data = self.export_data('arm')
+        
         if isinstance(ev_data, dict) and ('error' in ev_data.keys()):
             events = tuple([])
         else:
@@ -100,12 +128,6 @@ class Project(object):
         self.arm_names = arm_names
         self.configured = True
 
-    def __md(self):
-        """Return the project's metadata structure"""
-        p_l = self.__basepl('metadata')
-        p_l['content'] = 'metadata'
-        return self._call_api(p_l, 'metadata')[0]
-
     def __basepl(self, content, rec_type='flat', format='json'):
         """Return a dictionary which can be used as is or added to for
         payloads"""
@@ -114,7 +136,7 @@ class Project(object):
             d['type'] = rec_type
         return d
 
-    def __rcv(self):
+    def rcv(self):
         p_l = self.__basepl('version')
         rcv = self._call_api(p_l, 'version')[0].decode('utf-8')
         if 'error' in rcv:
@@ -124,17 +146,6 @@ class Project(object):
             return semantic_version.Version(rcv)
         else:
             return rcv
-
-    def is_longitudinal(self):
-        """
-        Returns
-        -------
-        boolean :
-            longitudinal status of this project
-        """
-        return len(self.events) > 0 and \
-            len(self.arm_nums) > 0 and \
-            len(self.arm_names) > 0
 
     def filter_metadata(self, key):
         """
@@ -168,33 +179,43 @@ class Project(object):
         rcr = RCRequest(self.url, payload, typpe)
         return rcr.execute(**request_kwargs)
 
-    def export_project(self, format='json',df_kwargs=None):
+    #def import_data(self, content, format='json', df_kwargs=None):
+
+    def export_data(self, content, format='json', arms=None,field=None, df_kwargs=None):
         """
-        Export the project's information (REDCap >= 6.5.0)
+        Export Data from REDCap Project
 
         Parameters
         ----------
-        format : (``'json'``), ``'csv'``, ``'xml'``
-            Return the project information,
-            csv or xml, ``'df''`` will return a ``pandas.DataFrame``
-        df_kwargs : dict
-            Passed to pandas.read_csv to control construction of
-            returned DataFrame
+
+        content:
+            * arm - Export Arms (longitudinal only)
+            * event - Export events for a project (longitudinal only)
+            * exportFieldNames - Exports lists of field names
+            * project - Exports project info
 
         Returns
         -------
-        project: list, str, ``pandas.DataFrame``
-            project information
+
         """
 
-        # Check for dataframe usage
+        # Check for dataframe format usage
         ret_format = format
         if format == 'df':
             ret_format = 'csv'
 
-        pl = self.__basepl('project',format=ret_format)
-        response, _ = self._call_api(pl, 'exp_project')
+        pl = self.__basepl(content,format=ret_format)
+        
+        # Establish list of all possible parameters
+        to_add = (arms,field)
+        str_add = ('arms','field')
+        for key, data in zip(str_add, to_add):
+            if data:
+                pl[key] = data
 
+        response, _ = self._call_api(pl, str("exp_"+content))
+
+        # Handle dataframe output gracefully
         if format in ('json', 'csv', 'xml'):
             return response
         elif not read_csv and format == 'df':
@@ -204,7 +225,7 @@ class Project(object):
             if not df_kwargs:
                 return read_csv(StringIO(response))
             else:
-                return read_csv(StringIO(response), **df_kwargs)   
+                return read_csv(StringIO(response), **df_kwargs)  
 
     def export_report(self, report_id, format='json', raw_or_label='raw', raw_or_label_headers='raw', export_checkbox_labels=False, df_kwargs=None):
         """
@@ -390,7 +411,7 @@ class Project(object):
         pl = self.__basepl('surveyLink',format=ret_format)
 
         # Require event if project is longitudinal
-        if self.is_longitudinal() == True and event is None:
+        if self.is_longitudinal == True and event is None:
             print("Error: 'event' is required for longitudinal projects")
             return
         else:  
@@ -492,7 +513,7 @@ class Project(object):
         pl = self.__basepl('surveyReturnCode',format=ret_format)
 
         # Require event if project is longitudinal
-        if self.is_longitudinal() == True and event is None:
+        if self.is_longitudinal == True and event is None:
             print("Error: 'event' is required for longitudinal projects")
             return
         else:  
@@ -548,7 +569,7 @@ class Project(object):
         pl = self.__basepl('participantList',format=ret_format)
 
         # Require event if project is longitudinal
-        if self.is_longitudinal() == True and event is None:
+        if self.is_longitudinal == True and event is None:
             print("Error: 'event' is required for longitudinal projects")
             return
         else:  
@@ -787,7 +808,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field,
                                                'redcap_event_name']}
                 else:
@@ -834,7 +855,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'arm_num': [self.def_field,
                                               'redcap_arm_name']}
             else:
@@ -858,7 +879,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field, 'redcap_arm_name']}
                 else:
                     df_kwargs = {'index_col': self.def_field}
@@ -915,7 +936,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'event_name': [self.def_field, 'redcap_arm_num']}
             else:
                 csv_kwargs = {'event_name': self.def_field}
@@ -938,7 +959,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field, 'redcap_arm_num']}
                 else:
                     df_kwargs = {'index_col': self.def_field}
@@ -988,7 +1009,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'event_name': [self.def_field, 'redcap_arm_num']}
             else:
                 csv_kwargs = {'event_name': self.def_field}
@@ -1009,7 +1030,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field, 'redcap_arm_num']}
                 else:
                     df_kwargs = {'index_col': self.def_field}
@@ -1052,7 +1073,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'event_name': [self.def_field, 'redcap_arm_num']}
             else:
                 csv_kwargs = {'event_name': self.def_field}
@@ -1073,7 +1094,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field, 'redcap_arm_num']}
                 else:
                     df_kwargs = {'index_col': self.def_field}
@@ -1116,7 +1137,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'event_name': [self.def_field, 'redcap_arm_num']}
             else:
                 csv_kwargs = {'event_name': self.def_field}
@@ -1137,7 +1158,7 @@ class Project(object):
             return response
         elif format == 'df':
             if not df_kwargs:
-                if self.is_longitudinal():
+                if self.is_longitudinal:
                     df_kwargs = {'index_col': [self.def_field, 'redcap_arm_num']}
                 else:
                     df_kwargs = {'index_col': self.def_field}
@@ -1329,7 +1350,7 @@ class Project(object):
             # We'll assume it's a df
             from StringIO import StringIO
             buf = StringIO()
-            if self.is_longitudinal():
+            if self.is_longitudinal:
                 csv_kwargs = {'index_label': [self.def_field,
                                               'redcap_event_name']}
             else:

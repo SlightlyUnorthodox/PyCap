@@ -118,7 +118,9 @@ class RCRequest(object):
             'del_arm': (['action', 'arms'], 'arm',
                 'Deleting arms but content is not arm'),
             'del_event': (['action', 'events'], 'event',
-                'Deleting events but content is not event')
+                'Deleting events but content is not event'),
+            'create_project': (['project_title','purpose'],'project',
+                'Creating project but content is not project')
         }
         extra, req_content, err_msg = valid_data[self.type]
         required.extend(extra)
