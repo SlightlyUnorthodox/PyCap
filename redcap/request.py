@@ -69,7 +69,7 @@ class RCRequest(object):
                 'Exporting record but content is not record'),
             'imp_record': (['type', 'overwriteBehavior', 'data', 'format'],
                 'record', 'Importing record but content is not record'),
-            'metadata': (['format'], 'metadata',
+            'exp_metadata': (['format'], 'metadata',
                 'Requesting metadata but content != metadata'),
             'exp_file': (['action', 'record', 'field'], 'file',
                 'Exporting file but content is not file'),
