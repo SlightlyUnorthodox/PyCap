@@ -131,10 +131,10 @@ class Project(object):
             self.metadata = self.export_data('metadata')
         except RequestException:
             raise RedcapError("Exporting metadata failed. Check your URL and token.")
-        try:
-            self.redcap_version = self.rcv()
-        except:
-            raise RedcapError("Determination of REDCap version failed")
+        #try:
+        self.redcap_version = self.rcv()
+        #except:
+        #    raise RedcapError("Determination of REDCap version failed")
         try:
             self.project_info = self.export_data('project')
             self.is_longitudinal = self.project_info['is_longitudinal']
@@ -786,12 +786,15 @@ class Project(object):
 
     # Get REDCap version
     def rcv(self):
-        rc = self.export_data('version')
+        #p_l = self.__basepl('version')
+        #rcv = self._call_api(p_l, 'exp_version')[0].decode('utf-8')
+        rcv = self.export_data('version').decode('utf-8')
+        print(rcv)
         if 'error' in rcv:
             warnings.warn('Version information not available for this REDCap instance')
             return ''
         if semantic_version.validate(rcv):
-            return semantic_version.Version(rcv)
+            return Version(rcv)
         else:
             return rcv
 

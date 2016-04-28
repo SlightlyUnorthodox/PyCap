@@ -85,7 +85,7 @@ class RCRequest(object):
                 'Exporting form-event mappings but content != formEventMapping'),
             'exp_user': (['format'], 'user',
                 'Exporting users but content is not user'),
-	        'version': (['format'], 'version',
+	        'exp_version': (['format'], 'version',
                 'Requesting version but content != version'),
             'exp_project': (['format'], 'project',
                 'Requesting project info but content is not project'),
@@ -163,7 +163,7 @@ class RCRequest(object):
         if self.type == 'exp_file':
             # don't use the decoded r.text
             return r.content
-        elif self.type == 'version':
+        elif self.type == 'exp_version':
             return r.content
         else:
             if self.fmt == 'json':
