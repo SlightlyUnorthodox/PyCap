@@ -229,10 +229,7 @@ class Project(object):
     # REDCap data-handling methods (Import/Export/Delete)
     #
 
-    def export_data(self, content, format='json', report_id = None,arms=None,field=None, raw_or_label='raw', 
-        raw_or_label_headers='raw', exportcheckboxlabel=False, 
-        record=None, event=None, forms=None, instrument=None, all_records=None, records=None, fields=None, 
-        events=None, event_name='label', export_survey_fields=False, export_data_access_groups = None, export_checkbox_labels = False, df_kwargs=None):
+    def export_data(self, content, action = 'export', format='json', report_id = None,arms=None,field=None, raw_or_label='raw', raw_or_label_headers='raw', exportcheckboxlabel=False, record=None, event=None, forms=None, instrument=None, all_records=None, records=None, fields=None, typpe = 'flat', events=None, event_name='label', export_survey_fields=False, export_data_access_groups = None, export_checkbox_labels = False, df_kwargs=None):
 
         """
         Export Data from REDCap Project
@@ -242,46 +239,158 @@ class Project(object):
 
         content:
             * arm - Export Arms (longitudinal only)
+                * required parameters:
+                    * format: ('json'), csv, xml
+                * optional parameters:
+                    * arms: an array of arm numbers that you wish to pull events for
+                    * returnFormat: ('json'), csv, xml
+                * returns:
+                    * arms for the project in the format specificied
             * event - Export events for a project (longitudinal only)
+                * required parameters:
+                    * format: ('json'), csv, xml
+                * optional parameters:
+                    * arms: an array of arm numbers that you wish to pull events for
+                    * returnFormat: ('json'), csv, xml
+                * returns:
+                    * events for the project in the format specificied
             * exportFieldNames - Exports lists of field names
-            * project - Exports project info
-            * report - Export project report
-                format : (``'json'``), ``'csv'``, ``'xml'``
-                    Return the project report data,
-                    csv or xml, ``'df''`` will return a ``pandas.DataFrame``
-                report_id: str
-                    report ID
-                raw_or_label : (``'raw'``), ``'label'``,
-                    export the raw coded values or labels for the options of
-                    multiple choice fields, or both
-                raw_or_label_headers: (``'raw'``), ``'label'``
-                    For "csv" & "flat" type only, exports variable/field names (raw)
-                    or the field labels (label)
-                export_checkbox_labels : (``False``), ``True``
-                    specify whether to export checkbox values as their label on
-                    export.
-                df_kwargs : dict
-                    Passed to pandas.read_csv to control construction of
-                    returned DataFrame
-                    ('json'),  'xml', 'csv'
-            * instrument
-            * pdf
-            * surveyLink
-            * surveyQueueLink
-            * surveyReturnCode
-            * exportFieldNames
-            * formEventMapping
-            * metadata
-            * record
-            * users
-            * file
-
-        Returns
-        -------
-
-        Re
-
-        """
+                * required parameters:
+                    * format: ('json'), csv, xml
+                * optional parameters:
+                    * field: a field's variable name, specifies field's field names to export.
+                    * returnFormat: ('json'), csv, xml
+                * returns:
+                    * list of export/import specific field names for all fields (if field not specified)
+            * file - Export file
+                * required parameters:
+                    * action - "export"
+                    * record - the record ID
+                    * field - the name of the field that contains the file
+                    * event - the unique event name (longitudinal only)
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * the contents of the file
+            * instrument - Export Instruments
+                * required parameters:
+                    format: ('json'), csv, xml
+                * returns
+                    * instruments for the project in the format specified
+            * pdf - Export PDF file of data collection instruments
+                * optional parameters:
+                    * record - the record ID. If blank - default, will return blank PDF
+                    * event - unique event name (longitudinal only)
+                        * if record not blank, event blank: will return data for all record events
+                        * if record not blank, event not blank: will return data only for specific event from record
+                    * allRecords - value does not matter, if passed whatsoever, exports all instruments (and events)
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * a PDF file containing one or all data collection instruments from the project
+            * formEventMapping - Export Instrument-Event Mappings
+                * required parameters:
+                    * format - ('json'), csv, xml
+                * optional parameters:
+                    * arms - an array of arm numbers that you wish to pull eventsfor
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * instrument-event mappings for the project in the format specified
+            * metadata - Export Metadata
+                * required parameters:
+                    * format: ('json'), csv, xml
+                * optional parameters:
+                    * fields: an array of filed names specifying specific fields you wish to pull
+                    * forms: an array of form names specifying specific data collection instruments
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * metadata from the project
+            * project - Export Project Info
+                * required parameters:
+                    * format: ('json'), csv , xml
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns:
+                    * attributes for the project in specified format
+            * record - Export Records
+                * required parameters:
+                    * format - ('json'), csv, xml
+                    * typpe:    
+                        * ('flat') - output as one record per row
+                        * eav - output as one data point per row
+                        * Non-longitudina - will have the fields -record, field-name, value
+                        * Longitudinal - will have the fields - record, field_name, value, redcap_event_name
+                * optional parameters:
+                    * records - an array of record names specifying records you wish to pull
+                    * fields - an array of field names specifying specific fields you wish to pull
+                    * forms - an array of form names you wish to pull records for
+                    * events - an array of unique event names that you wish to pull records for (longitudinal only)
+                    * rawOrLabel - ('raw'), label - export the raw coded values or labels for the options of multiple choice fields
+                    * rawOrLabelHeaders - ('raw'), label - for the CSV headers, export the variable/field names (raw) or the field labels (label)
+                    * exportCheckBoxLabel - ('false'), true - specifies the format of the checkbox field values (read more in REDCap API documentation)
+                    * returnFormat - ('json'), csv, xml
+                    * exportSurveyFields - ('false'), true
+                    * exportDataAccessGroups - ('false'), true
+                    * filterLogic - string of logic text forfilter the data to be returned by this API method
+                * returns
+                    * data from the project in the format and type specified orderered by record id and then by event id
+            * report - Export Reports
+                * required parameters:
+                    * report_id - the report ID number
+                    * format - ('json'), csv, xml
+                * optional parameters:
+                    * returnFormat - ('json'), csv, xml
+                    * rawOrLabel - ('raw'), label - export the raw coded values or labels for the options of multiple choice fields
+                    * rawOrLabelHeaders - ('raw'), label - for the CSV headers, export the variable/field names (raw) or the field labels (label)
+                    * exportCheckBoxLabel - ('false'), true - specifies the format of the checkbox field values (read more in REDCap API documentation)
+                * returns
+                    * data from the project in the format and type specified, orered by the record id and then by event id
+            * version - Export Redcap Versoin
+                * required parameters:
+                    * format - ('json'), csv, xml
+                * returns
+                    * the current REDCap version number as plaintext
+            * surveyLink - Export a Survey Link for a Participant
+                * required parameters:
+                    * record - the record ID
+                    * instrument - the unique instrument name
+                    * event - the unique event name (longitudinal only)
+                * optional parameters:
+                    * returnFormat - ('json'), csv, xml
+                * returns:
+                    * a unique survey link (URL) in plain text format for the specified record and instrument (and event)
+            * participantList - Export a Survey Participant List
+                * required parameters:
+                    * instrument - the unique instrument name
+                    * event the unique event name (longitudinal only)
+                    * format - ('json'), csv, xml
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * a list of all participants for the specified survey instrument (and event)
+            * surveyQueueLink - Export a survey queue link for a participant
+                * required parameters:
+                    * record - the record ID
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * a unique survey queue link (a URL) in plaint text format
+            * surveyReturnCode - Export a Survey Return Code for a Participant
+                * required parameters:
+                    * record - the record id
+                    * instrument - the unique instrument name
+                    * event - the unique event name (longitudinal only)
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * a unique return code in plain text format for the specified record and instrument (and event)
+            * user - Export Users
+                * required parameters:
+                    * format - ('json'), csv, xml
+                * optional parameters:
+                    * returnFormat: ('json'), csv, xml
+                * returns
+                    * all user-related attributes (see REDCap API documentation for full list)
+        """ 
 
         # Require event if project is longitudinal
         if self.is_longitudinal == True and event is None and content in ('surveyReturnCode','surveyParticipantList'):
@@ -677,8 +786,7 @@ class Project(object):
 
     # Get REDCap version
     def rcv(self):
-        p_l = self.__basepl('version')
-        rcv = self._call_api(p_l, 'version')[0].decode('utf-8')
+        rc = self.export_data('version')
         if 'error' in rcv:
             warnings.warn('Version information not available for this REDCap instance')
             return ''
