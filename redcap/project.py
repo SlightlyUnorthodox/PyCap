@@ -67,6 +67,13 @@ class Project(object):
     # Create a new project using 64-character supertoken
     @classmethod
     def create_project(cls, url, token, project_title, purpose, purpose_other=None,project_notes=None,is_longitudinal=None,surveys_enabled=None,record_autonumbering_enabled=None,**constructor_kwargs):
+
+        warnings.warn('create_project is only available for REDCap verson >= 6.5.0')
+
+        # Check for required parameters
+        if all([project_title,purpose]) is False:
+            raise RedcapError('To create a project, you must specify project_title (str) and purpose (int)')
+
         pl = {'token':token,
                 'content':'project',
                 'format':'json',
@@ -128,13 +135,14 @@ class Project(object):
 
     def configure(self):
         try:
+            self.redcap_version = self.rcv()
+        except:
+            raise RedcapError("Determination of REDCap version failed")
+        try:
             self.metadata = self.export_data('metadata')
         except RequestException:
             raise RedcapError("Exporting metadata failed. Check your URL and token.")
-        #try:
-        self.redcap_version = self.rcv()
-        #except:
-        #    raise RedcapError("Determination of REDCap version failed")
+        
         try:
             self.project_info = self.export_data('project')
             self.is_longitudinal = self.project_info['is_longitudinal']
@@ -216,8 +224,12 @@ class Project(object):
         return {'verify': self.verify}
 
     def _check_version(self, content, action='export'):
+        if self.redcap_version:
+            curr_version = self.redcap_version
+        else: 
+            curr_version = self.rcv()
+
         # Compare minimum version for function against current version
-        curr_version = self.redcap_version
         try:
             method_name, method_version = api_methods[action,content]
         except KeyError:
@@ -392,6 +404,34 @@ class Project(object):
                     * all user-related attributes (see REDCap API documentation for full list)
         """ 
 
+        # Check for method existence
+        if content is not 'version':
+            self._check_version(content,action)
+
+        # Check for required parameters
+        if content is 'file' and all([record,field,event]) is False and self.is_longitudinal is True:
+            raise RedcapError('[record,field,event] required for export_file')
+        elif content is 'file' and all([record,field]) is False:
+            raise RedcapError('[record,field] required for export_file')
+        elif content is 'record' and all([typpe]) is False:
+            raise RedcapError('[typpe] required for export_record')
+        elif content is 'report' and all([report_id]) is False:
+            raise RedcapError('[report_id] required for export_report')
+        elif content is 'surveyLink' and all([record,instrument,event]) is False and self.is_longitudinal is True:
+            raise RedcapError('[record,instrument,event] required for export_surveyLink')
+        elif content is 'surveyLink' and all([record,instrument]) is False:
+            raise RedcapError('[record,instrument] required for export_surveyLink')
+        elif content is 'participantList' and all[(instrument,event)] is False and self.is_longitudinal is True:
+            raise RedcapError('[instrument,event] required for export_survey_participants')
+        elif content is 'participantList' and all[(instrument)] is False:
+            raise RedcapError('[instrument] required for export_survey_participants')
+        elif content is 'surveyQueueLink' and all[(record)] is False:
+            raise RedcapError('[record] required export_survey_queue_link')
+        elif content is 'surveyReturnCode' and all[(record,instrument,event)] is False and self.is_longitudinal is True:
+            raise RedcapError('[record, instrument, event] required for surveyReturnCode')
+        elif content is 'surveyReturnCode' and all[(record,instrument)] is False:
+            raise RedcapError('[record,instrument] required for export_survey_return_code')
+
         # Require event if project is longitudinal
         if self.is_longitudinal == True and event is None and content in ('surveyReturnCode','surveyParticipantList'):
             print("Error: 'event' is required for longitudinal projects")
@@ -409,9 +449,9 @@ class Project(object):
 
         # Establish list of all possible parameters
         to_add = (arms,field,report_id, raw_or_label, raw_or_label_headers, exportcheckboxlabel,record, event, 
-            instrument, records, fields, events, event_name, export_survey_fields, export_data_access_groups, export_checkbox_labels, forms, all_records)
+            instrument, records, fields, events, event_name, export_survey_fields, export_data_access_groups, typpe, export_checkbox_labels, forms, all_records)
         str_add = ('arms','field','report_id', 'rawOrLabel', 'rawOrLabelHeadHeaders', 'exportCheckboxLabel','record','event','instrument', 'records', 'fields', 'events', 
-            'event_name', 'export_survey_fields', 'export_data_access_groups', 'export_checkbox_labels', 'form','allrecords')
+            'event_name', 'export_survey_fields', 'export_data_access_groups', 'type', 'export_checkbox_labels', 'form','allrecords')
 
         for key, data in zip(str_add, to_add):
             if data:
@@ -593,13 +633,28 @@ class Project(object):
         pl = self.__basepl(content,format = returnFormat)
         to_add = (action,data,override,record,field,event,file,typpe,overwriteBehavior,dateFormat,returnContent)
         str_add = ('action','data','override','record','field','event','file','type','overwriteBehavior','dateFormat','returnContent')
-        for key, data in zip(str_add, to_add):
-            if data:
+        for key, values in zip(str_add, to_add):
+            if values:
                 #  Make a url-ok string
-                if key in ('data','fields', 'records', 'forms', 'events'):
-                    pl[key] = ','.join(data)
+                if key in ('fields', 'records', 'forms', 'events'):
+                    pl[key] = ','.join(values)
+                elif key is 'data':
+                    if hasattr(data, 'to_csv'):
+                        # We'll assume it's a df
+                        buf = StringIO()
+                        if self.is_longitudinal:
+                            csv_kwargs = {'index_label': [self.def_field,'redcap_event_name']}
+                        else:
+                            csv_kwargs = {'index_label': self.def_field}
+                        data.to_csv(buf, **csv_kwargs)
+                        pl['data'] = buf.getvalue()
+                        buf.close()
+                        format = 'csv'
+                    elif format == 'json':
+                        print('true')
+                        pl['data'] = json.dumps(data, separators=(',', ':'))
                 else:
-                    pl[key] = data
+                    pl[key] = values
 
         if content is 'file':       
             file_kwargs = {'files': {'file': (fname, fobj)}}
@@ -786,10 +841,7 @@ class Project(object):
 
     # Get REDCap version
     def rcv(self):
-        #p_l = self.__basepl('version')
-        #rcv = self._call_api(p_l, 'exp_version')[0].decode('utf-8')
         rcv = self.export_data('version').decode('utf-8')
-        print(rcv)
         if 'error' in rcv:
             warnings.warn('Version information not available for this REDCap instance')
             return ''
